@@ -19,12 +19,8 @@ with open("tokenizer.pkl", "rb") as f:
 with open("label_encoder.pkl", "rb") as f:
     label_encoder = pickle.load(f)
 
-# 🔥 Load both datasets
-faq_df1 = pd.read_csv("sk_faq_dataset_fully_unique.csv")        # SK FAQ dataset
-faq_df2 = pd.read_csv("barangay_buhangin_questions.csv")       # Barangay Buhangin rules
-
-# 🔥 Merge datasets into one big FAQ set
-faq_df = pd.concat([faq_df1, faq_df2], ignore_index=True)
+# 🔥 Load the unified SK FAQ dataset
+faq_df = pd.read_csv("sk_dataset_2000.csv")
 
 max_len = 20
 
@@ -34,7 +30,7 @@ max_len = 20
 vectorizer = HashingVectorizer(n_features=2**16)
 clf = SGDClassifier(loss="log_loss")
 
-# Initialize with merged FAQ dataset
+# Initialize with FAQ dataset
 if "intent" in faq_df.columns and "patterns" in faq_df.columns:
     X_init = vectorizer.transform(faq_df["patterns"].astype(str).tolist())
     y_init = faq_df["intent"].astype(str).tolist()
@@ -85,8 +81,21 @@ templates = [
 
 last_responses = {}
 
+def ensure_minimum_words(text, min_words=40):
+    """Pad response to at least 40 words by elaborating naturally."""
+    words = text.split()
+    if len(words) < min_words:
+        filler = (
+            " To provide a bit more detail, our council is always working on multiple "
+            "programs and activities that benefit not only the youth but also the wider "
+            "community. We encourage participation and feedback to continuously improve "
+            "our initiatives for everyone in Brgy. Buhangin."
+        )
+        text = text + filler
+    return text
+
 def generate_dynamic_reply(base_reply, intent):
-    """Wrap base reply into a random template and avoid repetition."""
+    """Wrap base reply into a random template and ensure minimum length."""
     chosen_template = random.choice(templates)
     reply = chosen_template.format(answer=base_reply)
 
@@ -96,6 +105,7 @@ def generate_dynamic_reply(base_reply, intent):
         if alt_templates:
             reply = random.choice(alt_templates).format(answer=base_reply)
 
+    reply = ensure_minimum_words(reply, 40)
     last_responses[intent] = reply
     return reply
 
@@ -115,7 +125,7 @@ def chat():
 
     # ---------- Step 2: Incremental model backup ----------
     X = vectorizer.transform([message])
-    if hasattr(clf, "classes_"):  # ensure trained
+    if hasattr(clf, "classes_"):
         alt_intent = clf.predict(X)[0]
     else:
         alt_intent = predicted_intent
@@ -124,14 +134,14 @@ def chat():
     bot_reply = "I'm not sure how to respond yet."
     source = "keras"
 
-    if confidence < 0.6:  # if low confidence, fallback
+    if confidence < 0.6:  # low confidence → fallback
         predicted_intent = alt_intent
         source = "incremental"
 
     if predicted_intent in faq_df["intent"].values:
         responses = faq_df[faq_df["intent"] == predicted_intent]["bot_response"].tolist()
         if responses:
-            base_reply = random.choice(responses)  # pick a valid base answer
+            base_reply = random.choice(responses)
             bot_reply = generate_dynamic_reply(base_reply, predicted_intent)
 
     # ---------- Step 4: Log ----------
@@ -154,7 +164,7 @@ def feedback():
     X_new = vectorizer.transform([message])
     clf.partial_fit(X_new, [correct_intent])
 
-    # Also log corrected entry
+    # Log corrected entry
     log_conversation(message, correct_intent, "Corrected by user", source="feedback")
 
     return jsonify({"status": "updated", "new_intent": correct_intent})
