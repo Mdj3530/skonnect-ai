@@ -7,7 +7,6 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from sklearn.linear_model import SGDClassifier
 from sklearn.feature_extraction.text import HashingVectorizer
-from sklearn.preprocessing import LabelEncoder
 
 # ========================
 # Load TensorFlow model & preprocessors
@@ -17,15 +16,13 @@ model = load_model("chatbot_model.h5")
 with open("tokenizer.pkl", "rb") as f:
     tokenizer = pickle.load(f)
 
-# Load response map (intent → bot_response)
-with open("response_map.pkl", "rb") as f:
-    response_map = pickle.load(f)
+with open("label_encoder.pkl", "rb") as f:
+    label_encoder = pickle.load(f)
 
-# Build label encoder dynamically (no pickle dependency)
-label_encoder = LabelEncoder()
-label_encoder.fit(list(response_map.keys()))
+# 🔥 Load the unified SK FAQ dataset
+faq_df = pd.read_csv("sk_faq_dataset_full.csv")
 
-max_len = 25  # must match training script
+max_len = 20
 
 # ========================
 # Incremental learning model (hybrid)
@@ -33,9 +30,11 @@ max_len = 25  # must match training script
 vectorizer = HashingVectorizer(n_features=2**16)
 clf = SGDClassifier(loss="log_loss")
 
-# Initialize with intents from response_map
-intents = list(response_map.keys())
-clf.partial_fit(vectorizer.transform(intents), intents, classes=np.unique(intents))
+# Initialize with FAQ dataset
+if "intent" in faq_df.columns and "patterns" in faq_df.columns:
+    X_init = vectorizer.transform(faq_df["patterns"].astype(str).tolist())
+    y_init = faq_df["intent"].astype(str).tolist()
+    clf.partial_fit(X_init, y_init, classes=np.unique(y_init))
 
 # ========================
 # Logging
@@ -50,7 +49,9 @@ def log_conversation(user_message, predicted_intent, bot_reply, source="keras"):
                           columns=["timestamp", "user_message", "predicted_intent", "bot_response", "model_source"])
     log_df.to_csv(LOG_FILE, mode="a", header=False, index=False)
 
-# Reload logs into incremental model
+# ========================
+# Reload from logs for auto-learning
+# ========================
 try:
     log_data = pd.read_csv(LOG_FILE)
     if not log_data.empty:
@@ -137,9 +138,11 @@ def chat():
         predicted_intent = alt_intent
         source = "incremental"
 
-    if predicted_intent in response_map:
-        base_reply = response_map[predicted_intent]
-        bot_reply = generate_dynamic_reply(base_reply, predicted_intent)
+    if predicted_intent in faq_df["intent"].values:
+        responses = faq_df[faq_df["intent"] == predicted_intent]["bot_response"].tolist()
+        if responses:
+            base_reply = random.choice(responses)
+            bot_reply = generate_dynamic_reply(base_reply, predicted_intent)
 
     # ---------- Step 4: Log ----------
     log_conversation(message, predicted_intent, bot_reply, source)
