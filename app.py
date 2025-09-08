@@ -7,6 +7,7 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from sklearn.linear_model import SGDClassifier
 from sklearn.feature_extraction.text import HashingVectorizer
+from sklearn.preprocessing import LabelEncoder
 
 # ========================
 # Load TensorFlow model & preprocessors
@@ -16,11 +17,13 @@ model = load_model("chatbot_model.h5")
 with open("tokenizer.pkl", "rb") as f:
     tokenizer = pickle.load(f)
 
-with open("label_encoder.pkl", "rb") as f:
-    label_encoder = pickle.load(f)
-
+# Load response map (intent → bot_response)
 with open("response_map.pkl", "rb") as f:
-    response_map = pickle.load(f)   
+    response_map = pickle.load(f)
+
+# Build label encoder dynamically (no pickle dependency)
+label_encoder = LabelEncoder()
+label_encoder.fit(list(response_map.keys()))
 
 max_len = 25  # must match training script
 
@@ -95,7 +98,7 @@ def generate_dynamic_reply(base_reply, intent):
     chosen_template = random.choice(templates)
     reply = chosen_template.format(answer=base_reply)
 
-    # Avoid repeating the same reply for the same intent
+    # Avoid repeating the exact same reply for the same intent
     if intent in last_responses and last_responses[intent] == reply:
         alt_templates = [t for t in templates if t.format(answer=base_reply) != reply]
         if alt_templates:
