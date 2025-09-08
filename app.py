@@ -20,7 +20,7 @@ with open("label_encoder.pkl", "rb") as f:
     label_encoder = pickle.load(f)
 
 # 🔥 Load the unified SK FAQ dataset
-faq_df = pd.read_csv("sk_faq_dataset_intents.csv")
+faq_df = pd.read_csv("skonnect_faq_dataset_intents.csv")
 
 max_len = 20
 
