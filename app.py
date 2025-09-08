@@ -20,7 +20,7 @@ with open("label_encoder.pkl", "rb") as f:
     label_encoder = pickle.load(f)
 
 with open("response_map.pkl", "rb") as f:
-    response_map = pickle.load(f)   # intent → bot_response
+    response_map = pickle.load(f)   
 
 max_len = 25  # must match training script
 
